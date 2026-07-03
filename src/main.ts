@@ -8,7 +8,7 @@ import { applyI18n, toggleLang, t } from './core/i18n'
 import { createScroll } from './core/scroll'
 import { SoundEngine } from './core/sound'
 import { runPreloader } from './core/preloader'
-import { setupActReveals } from './fx/reveal'
+import { setupActReveals, reducedMotion } from './fx/reveal'
 
 import { createStage } from './three/stage'
 import { createSky } from './three/sky'
@@ -48,7 +48,11 @@ const stars = createStars(q)
 
 stage.scene.add(createSky(), ocean.group, terrain.group, cube.group, threads.group, grid.group, stars.points)
 
-stage.onFrame((t3) => {
+// 转场马赛克玻璃：强度跟随滚动速度——scrub 模式下滚动速度即画面切换速度
+let lastScrollY = window.scrollY
+let mosaicLevel = 0
+
+stage.onFrame((t3, dt) => {
   ocean.uniforms.uTime.value = t3
   cube.uniforms.uTime.value = t3
   cube.fallUniforms.uTime.value = t3
@@ -57,6 +61,15 @@ stage.onFrame((t3) => {
   stars.uniforms.uTime.value = t3
   terrain.seamUniforms.uTime.value = t3
   cube.update(t3)
+  ocean.updateReflection(stage.renderer, stage.scene, stage.camera)
+
+  const y = window.scrollY
+  const v = Math.abs(y - lastScrollY) / Math.max(dt, 1e-3) / window.innerHeight // 屏/秒
+  lastScrollY = y
+  const target = reducedMotion ? 0 : Math.min(v * 0.55, 1)
+  // 快起慢收：转场一开始立刻碎裂，停下后玻璃块缓缓复原
+  mosaicLevel += (target - mosaicLevel) * Math.min(dt * (target > mosaicLevel ? 12 : 3.5), 1)
+  stage.mosaic.value = mosaicLevel
 })
 
 // ---- 章节导航高亮 + 换幕音 ----
