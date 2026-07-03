@@ -60,11 +60,17 @@ export function createCube(quality: 'high' | 'low'): Cube {
       varying vec3 vWorld;
       varying vec3 vLocal;
       varying float vSeed;
+      varying vec3 vPos;    // 体素自身坐标（±1），用于面内倒角
+      varying vec3 vNl;     // 体素局部法线（轴对齐）
+      varying vec3 vCenter; // 整块立方体中心（世界坐标）
 
       void main() {
         vSeed = aSeed;
         // 组装态下顶点在整块立方体中的归一化坐标（约 -1..1）
         vLocal = (aHome * ${SPACING.toFixed(2)} + position) / 1.25;
+        vPos = position / ${(VOXEL / 2).toFixed(4)};
+        vNl = normal;
+        vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         vec4 ip = instanceMatrix * vec4(position, 1.0);
         vec4 w = modelMatrix * ip;
         vWorld = w.xyz;
@@ -80,6 +86,9 @@ export function createCube(quality: 'high' | 'low'): Cube {
       varying vec3 vWorld;
       varying vec3 vLocal;
       varying float vSeed;
+      varying vec3 vPos;
+      varying vec3 vNl;
+      varying vec3 vCenter;
 
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -96,7 +105,7 @@ export function createCube(quality: 'high' | 'low'): Cube {
       }
 
       void main() {
-        vec3 deep = vec3(0.02, 0.09, 0.28);
+        vec3 deep = vec3(0.012, 0.05, 0.16);
         vec3 blue = vec3(0.09, 0.42, 1.0);
         vec3 cyan = vec3(0.35, 0.85, 1.0);
         vec3 white = vec3(0.85, 0.96, 1.0);
@@ -104,29 +113,45 @@ export function createCube(quality: 'high' | 'low'): Cube {
         vec3 n = normalize(vNormal);
         vec3 v = normalize(cameraPosition - vWorld);
 
-        // 内部光核：由整块立方体中心向外柔和辐射
-        float core = 1.0 - clamp(length(vLocal) * 0.55, 0.0, 1.0);
-        core = pow(core, 1.4);
+        // 内部光核：收得更深，只在体内中心附近发亮
+        float core = 1.0 - clamp(length(vLocal) * 0.62, 0.0, 1.0);
+        core = pow(core, 1.8);
 
-        // 极缓慢流动的内部能量（低频、细腻）
+        // 极缓慢流动的内部能量（低频）
         float e = noise(vLocal.xy * 1.7 + uTime * 0.05) * 0.6
                 + noise(vLocal.zy * 2.2 - uTime * 0.04) * 0.4;
-        float energy = (0.78 + 0.22 * e) * uEnergy;
+        float energy = (0.78 + 0.22 * e) * uEnergy * (0.93 + vSeed * 0.14);
 
-        // 内部光把顶面与受光侧「照透」，底部留深
+        // 冰内层理：近水平的暗色纹层，缓慢漂移
+        float strata = noise(vec2(vLocal.y * 5.0 - uTime * 0.02, vLocal.x * 1.6 + vLocal.z * 1.6));
+        // 高频颗粒：静态细粒，打破面的平板感
+        float grain = noise(vLocal.xy * 17.0 + vLocal.z * 7.0) * 0.55
+                    + noise(vLocal.zy * 23.0 - vLocal.x * 5.0) * 0.45;
+
         float top = clamp(n.y, 0.0, 1.0);
-        float side = clamp(n.x * 0.6 + n.z * 0.4, 0.0, 1.0);
-        float vert = smoothstep(-1.4, 1.1, vLocal.y); // 面上自下而上渐亮
-
         float fres = pow(1.0 - max(dot(n, v), 0.0), 2.6);
 
+        // 体积光核：视线越贴近立方体中心越亮——剪影中心永远有一颗「心脏」
+        float dperp = length(cross(-v, vCenter - cameraPosition));
+        float hot = smoothstep(1.15, 0.0, dperp);
+
+        // 体素面内倒角：面缘微暗，读作精密拼装
+        vec3 ap = abs(vPos);
+        vec3 an = abs(vNl);
+        float tmax = max(ap.x * (1.0 - an.x), max(ap.y * (1.0 - an.y), ap.z * (1.0 - an.z)));
+        float bevel = smoothstep(1.0, 0.85, tmax);
+
+        // 内透光：面心亮、角落沉，读作「光从体内渗出」
         vec3 col = deep;
-        col += mix(blue, cyan, core * 0.5 + vert * 0.5) * (core * 0.55 + vert * 0.3) * energy;
-        col += white * pow(core, 4.0) * 0.15 * energy;
-        col += cyan * top * 0.2 * energy;
-        col += cyan * side * 0.12 * energy;
-        col += blue * 0.08;
-        col += cyan * fres * 0.28;
+        col += mix(blue, cyan, core * 1.6)
+             * core * 0.9 * energy
+             * (0.82 + 0.18 * strata);
+        col += mix(cyan, white, hot * 0.35) * pow(hot, 2.1) * 0.42 * energy; // 发光心脏
+        col += cyan * top * 0.05 * energy;
+        col += blue * 0.03;
+        col += cyan * fres * 0.30; // 玻璃感靠边缘，不靠面上填充
+        col *= 0.80 + 0.20 * bevel;
+        col *= 0.94 + grain * 0.10;
 
         gl_FragColor = vec4(col, uOpacity);
       }
