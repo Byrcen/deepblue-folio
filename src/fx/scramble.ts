@@ -1,6 +1,8 @@
 // 乱码解算文字动效：字符从随机 HUD 字符逐个左→右解算为目标文本
 // 多行文本（含 \n）按行处理，渲染为 <br> 分隔
 
+import { reducedMotion } from './reveal'
+
 const GLYPHS = '01▪▫/\\|<>-_=+*#@$%&アイウエオカキクケコ'
 
 function randGlyph(): string {
@@ -12,6 +14,11 @@ const running = new WeakMap<HTMLElement, number>()
 export function scramble(el: HTMLElement, target: string, duration = 600): void {
   const prev = running.get(el)
   if (prev) cancelAnimationFrame(prev)
+
+  if (reducedMotion) {
+    el.innerHTML = target.split('\n').join('<br>')
+    return
+  }
 
   const lines = target.split('\n')
   const total = target.replace(/\n/g, '').length

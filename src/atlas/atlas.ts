@@ -136,9 +136,9 @@ export function createAtlas(hooks: AtlasHooks): Atlas {
       core.setAttribute('r', '2.6')
       g.appendChild(core)
 
-      // 类型小标签
+      // 类型小标签（8px 字号 + 2px 字距：CJK 全宽字符按 10px 估，拉丁按 7.5px）
       const tag = p.tag[lang]
-      const tagW = tag.length * 7.5 + 16
+      const tagW = [...tag].reduce((w, ch) => w + (/[⺀-鿿豈-﫿＀-￯]/.test(ch) ? 10 : 7.5), 16)
       const tagBg = document.createElementNS(ns, 'rect')
       tagBg.setAttribute('class', 'node-tag-bg')
       tagBg.setAttribute('x', String(-tagW / 2)); tagBg.setAttribute('y', '-38')

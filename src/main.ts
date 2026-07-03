@@ -21,7 +21,6 @@ import { createStars } from './three/stars'
 import { buildTimeline } from './three/timeline'
 
 import { createAtlas } from './atlas/atlas'
-import { ACT_IDS } from './content'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -29,6 +28,11 @@ gsap.registerPlugin(ScrollTrigger)
 applyI18n()
 const scroll = createScroll()
 const sound = new SoundEngine()
+
+// ---- 开机序列：立即启动计数动画；揭幕前锁定滚动 ----
+const booted = runPreloader()
+scroll.stop()
+void booted.then(() => scroll.start())
 
 // ---- 3D 舞台 ----
 const canvas = document.getElementById('stage') as HTMLCanvasElement
@@ -67,15 +71,28 @@ buildTimeline({ stage, ocean, terrain, cube, threads, grid, stars }, (i) => {
   }
 })
 
-setupActReveals()
+setupActReveals(booted)
 
-// ---- 星图 ----
+// ---- 滚动提示：首次滚动后淡出 ----
+const scrollHint = document.getElementById('scroll-hint')!
+function hideHintOnScroll(): void {
+  if (window.scrollY < 60) return
+  scrollHint.classList.add('gone')
+  window.removeEventListener('scroll', hideHintOnScroll)
+}
+window.addEventListener('scroll', hideHintOnScroll, { passive: true })
+
+// ---- 星图（不透明全屏层：打开后暂停 3D 渲染，省 GPU）----
+let atlasPauseTimer = 0
 const atlas = createAtlas({
   onOpen: () => {
     scroll.stop()
     sound.tick()
+    atlasPauseTimer = window.setTimeout(() => stage.pause(), 600) // 等淡入完成
   },
   onClose: () => {
+    clearTimeout(atlasPauseTimer)
+    stage.resume()
     scroll.start()
     sound.tick()
   },
@@ -114,12 +131,10 @@ document.querySelectorAll<HTMLAnchorElement>('[data-act-link], .logo').forEach((
     e.preventDefault()
     const id = a.dataset.actLink ?? a.dataset.navTo
     if (!id) return
-    const idx = (ACT_IDS as readonly string[]).indexOf(id)
     const section = document.getElementById(`act-${id}`)
     if (!section) return
     if (menuOpen) setMenu(false)
     if (atlas.isOpen()) atlas.close()
-    void idx
     scroll.scrollTo(section)
   })
 })
@@ -147,7 +162,6 @@ window.addEventListener('keydown', (e) => {
 
 // ---- 启动 ----
 stage.start()
-void runPreloader()
 
 // 调试口（dev only，会被 tree-shake 掉? 保留亦无害）
 if (import.meta.env.DEV) {

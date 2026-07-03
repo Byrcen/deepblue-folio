@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { reducedMotion } from '../fx/reveal'
 
 export type Quality = 'high' | 'low'
 
@@ -22,6 +23,8 @@ export interface Stage {
   cam: CamState
   onFrame(cb: (t: number, dt: number) => void): void
   start(): void
+  pause(): void
+  resume(): void
 }
 
 export function createStage(canvas: HTMLCanvasElement): Stage {
@@ -62,6 +65,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight
     camera.updateProjectionMatrix()
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : 1.5))
     renderer.setSize(window.innerWidth, window.innerHeight)
     composer?.setSize(window.innerWidth, window.innerHeight)
   })
@@ -80,20 +84,25 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     })
   }
 
+  let running = false
+  let rafId = 0
+  let elapsed = 0 // 自累计时间：暂停/切后台不产生跳变
+
   function frame(): void {
     const dt = Math.min(clock.getDelta(), 0.05)
-    const t = clock.elapsedTime
+    elapsed += dt
+    const t = elapsed
     for (const cb of callbacks) cb(t, dt)
 
     // 窄视口（竖构图）自动拉远，保证主体完整入画
     const aspect = window.innerWidth / window.innerHeight
     const distScale = aspect >= 1 ? 1 : Math.min(1.9, Math.pow(1 / aspect, 0.8))
     lookAt.set(cam.tx, cam.ty, cam.tz)
-    // 视差缓动 + 极缓慢的呼吸漂移，让镜头「活」起来
+    // 视差缓动 + 极缓慢的呼吸漂移，让镜头「活」起来（reduced-motion 时保持静止）
     par.x += (mouse.x * 0.55 - par.x) * Math.min(dt * 2.5, 1)
     par.y += (-mouse.y * 0.3 - par.y) * Math.min(dt * 2.5, 1)
-    const swayX = Math.sin(t * 0.11) * 0.14
-    const swayY = Math.sin(t * 0.16 + 1.7) * 0.07
+    const swayX = reducedMotion ? 0 : Math.sin(t * 0.11) * 0.14
+    const swayY = reducedMotion ? 0 : Math.sin(t * 0.16 + 1.7) * 0.07
     camera.position.set(
       cam.tx + (cam.px - cam.tx) * distScale + par.x + swayX,
       cam.ty + (cam.py - cam.ty) * distScale + par.y + swayY,
@@ -107,7 +116,21 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
 
     if (composer) composer.render()
     else renderer.render(scene, camera)
-    requestAnimationFrame(frame)
+    rafId = requestAnimationFrame(frame)
+  }
+
+  // 全屏不透明覆盖层（如作品星图）打开时暂停渲染，省 GPU；canvas 保留最后一帧
+  function resume(): void {
+    if (running) return
+    running = true
+    clock.getDelta() // 吞掉暂停期间累积的 delta，避免恢复瞬间跳变
+    rafId = requestAnimationFrame(frame)
+  }
+
+  function pause(): void {
+    if (!running) return
+    running = false
+    cancelAnimationFrame(rafId)
   }
 
   return {
@@ -117,6 +140,8 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     quality,
     cam,
     onFrame: (cb) => callbacks.push(cb),
-    start: () => requestAnimationFrame(frame),
+    start: resume,
+    pause,
+    resume,
   }
 }
