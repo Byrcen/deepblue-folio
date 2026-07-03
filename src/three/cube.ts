@@ -111,7 +111,7 @@ export function createCube(quality: 'high' | 'low'): Cube {
         // 极缓慢流动的内部能量（低频、细腻）
         float e = noise(vLocal.xy * 1.7 + uTime * 0.05) * 0.6
                 + noise(vLocal.zy * 2.2 - uTime * 0.04) * 0.4;
-        float energy = (0.65 + 0.45 * e) * uEnergy;
+        float energy = (0.78 + 0.22 * e) * uEnergy;
 
         // 内部光把顶面与受光侧「照透」，底部留深
         float top = clamp(n.y, 0.0, 1.0);
@@ -121,12 +121,12 @@ export function createCube(quality: 'high' | 'low'): Cube {
         float fres = pow(1.0 - max(dot(n, v), 0.0), 2.6);
 
         vec3 col = deep;
-        col += mix(blue, cyan, core * 0.5 + vert * 0.5) * (core * 0.9 + vert * 0.5) * energy;
-        col += white * pow(core, 4.0) * 0.35 * energy;
-        col += cyan * top * 0.35 * energy;
-        col += cyan * side * 0.2 * energy;
-        col += blue * 0.1;
-        col += cyan * fres * 0.4;
+        col += mix(blue, cyan, core * 0.5 + vert * 0.5) * (core * 0.55 + vert * 0.3) * energy;
+        col += white * pow(core, 4.0) * 0.15 * energy;
+        col += cyan * top * 0.2 * energy;
+        col += cyan * side * 0.12 * energy;
+        col += blue * 0.08;
+        col += cyan * fres * 0.28;
 
         gl_FragColor = vec4(col, uOpacity);
       }
