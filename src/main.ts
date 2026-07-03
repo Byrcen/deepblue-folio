@@ -11,6 +11,7 @@ import { runPreloader } from './core/preloader'
 import { setupActReveals } from './fx/reveal'
 
 import { createStage } from './three/stage'
+import { createSky } from './three/sky'
 import { createOcean } from './three/ocean'
 import { createTerrain } from './three/terrain'
 import { createCube } from './three/cube'
@@ -41,7 +42,7 @@ const threads = createThreads(q)
 const grid = createCityGrid(q)
 const stars = createStars(q)
 
-stage.scene.add(ocean.mesh, terrain.group, cube.group, threads.group, grid.group, stars.points)
+stage.scene.add(createSky(), ocean.group, terrain.group, cube.group, threads.group, grid.group, stars.points)
 
 stage.onFrame((t3) => {
   ocean.uniforms.uTime.value = t3

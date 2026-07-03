@@ -13,8 +13,8 @@ function hashNoise(x: number, z: number): number {
 
 /** 地形高度函数（world xz），光缝与相机路径共用 */
 export function heightAt(x: number, z: number): number {
-  const side = THREE.MathUtils.smoothstep(Math.abs(x), 13, 48)
-  const base = side * 10
+  const side = THREE.MathUtils.smoothstep(Math.abs(x), 11, 42)
+  const base = side * 13
   const n = 0.62 + 0.38 * hashNoise(x * 0.11, z * 0.1)
   const back = THREE.MathUtils.smoothstep(-z, 34, 70) * 5 // 远处地平线隆起
   return base * n + back * (0.5 + 0.5 * n)
@@ -76,16 +76,24 @@ export function createTerrain(quality: 'high' | 'low'): Terrain {
         vec3 cyan = vec3(0.30, 0.88, 1.0);
         vec3 blue = vec3(0.18, 0.49, 0.96);
 
+        vec3 nrm = normalize(vNormal);
         vec3 v = normalize(cameraPosition - vWorld);
-        float rim = pow(1.0 - max(dot(normalize(vNormal), v), 0.0), 4.0);
+        float rim = pow(1.0 - max(dot(nrm, v), 0.0), 4.0);
         float h = smoothstep(0.5, 10.0, vWorld.y);
         float dist = length(cameraPosition - vWorld);
         float fade = exp(-dist * 0.012);
 
-        vec3 col = base * (0.4 + h * 0.5);
-        col += blue * rim * uRim * 0.12 * (0.3 + h);
-        col += cyan * rim * rim * rim * uRim * 0.28;
-        col += cyan * h * 0.012;
+        // 中心光源（立方体）照亮内侧山坡：水线附近最亮，向上渐暗
+        vec3 L = normalize(vec3(0.0, 2.0, 0.0) - vWorld);
+        float facing = max(dot(nrm, L), 0.0);
+        float att = exp(-length(vWorld.xz) * 0.06);
+        float shore = smoothstep(8.0, 0.0, vWorld.y);
+        float slope = clamp((1.0 - nrm.y) * 2.5, 0.0, 1.0); // 只照亮坡面，平地不发光
+
+        vec3 col = base * (0.3 + h * 0.4);
+        col += mix(blue, cyan, 0.45) * facing * att * slope * (0.25 + shore * 0.8) * uRim;
+        col += blue * rim * uRim * 0.10 * (0.3 + h);
+        col += cyan * rim * rim * rim * uRim * 0.22;
         col *= (0.35 + 0.65 * fade);
 
         gl_FragColor = vec4(col, uOpacity);
@@ -106,7 +114,7 @@ export function createTerrain(quality: 'high' | 'low'): Terrain {
     seamPts.push(new THREE.Vector3(x, heightAt(x, z) + 0.25, z))
   }
   const seamCurve = new THREE.CatmullRomCurve3(seamPts)
-  const seamGeo = new THREE.TubeGeometry(seamCurve, 240, 0.2, 6, false)
+  const seamGeo = new THREE.TubeGeometry(seamCurve, 240, 0.09, 6, false)
   // TubeGeometry 的 uv.x 即沿管方向 0..1
   const seamUniforms = {
     uTime: { value: 0 },
@@ -139,8 +147,8 @@ export function createTerrain(quality: 'high' | 'low'): Terrain {
         float head = smoothstep(uProgress - 0.07, uProgress, vT);
         // 沿线流动的能量脉冲
         float pulse = 0.55 + 0.45 * sin(vT * 60.0 - uTime * 4.0);
-        vec3 col = mix(cyan, white, head) * (1.6 + head * 2.6) * pulse;
-        gl_FragColor = vec4(col, uOpacity * (0.7 + head * 0.3));
+        vec3 col = mix(cyan, white, head) * (1.1 + head * 2.0) * pulse;
+        gl_FragColor = vec4(col, uOpacity * (0.65 + head * 0.35));
       }
     `,
   })

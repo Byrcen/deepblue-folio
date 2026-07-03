@@ -44,7 +44,7 @@ export function buildTimeline(refs: SceneRefs, onActChange: (index: number) => v
 
   // ---- 第二幕：立方体裂解 + 光瀑 ----
   tl.to(cube.state, { explode: 1, duration: 0.5 }, 0.5)
-  tl.to(cube.uniforms.uEnergy, { value: 1.7, duration: 0.5 }, 0.5)
+  tl.to(cube.uniforms.uEnergy, { value: 1.15, duration: 0.5 }, 0.5)
   tl.to(cube.fallUniforms.uOpacity, { value: 1, duration: 0.35 }, 0.6)
   tl.to(ocean.uniforms.uGlow, { value: 1.6, duration: 0.6 }, 0.5)
 
@@ -68,7 +68,7 @@ export function buildTimeline(refs: SceneRefs, onActChange: (index: number) => v
 
   // ---- 第六幕：拉高俯瞰，城市与星空提亮，光缝退为背景 ----
   tl.to(terrain.seamUniforms.uOpacity, { value: 0.45, duration: 0.6 }, 4.3)
-  tl.to(terrain.uniforms.uRim, { value: 2.0, duration: 0.8 }, 4.2)
+  tl.to(terrain.uniforms.uRim, { value: 1.5, duration: 0.8 }, 4.2)
   tl.to(grid.uniforms.uBoost, { value: 2.3, duration: 0.8 }, 4.2)
   tl.to(stars.uniforms.uOpacity, { value: 1, duration: 0.8 }, 4.2)
 
@@ -88,7 +88,7 @@ export function buildTimeline(refs: SceneRefs, onActChange: (index: number) => v
   stage.onFrame(() => {
     threads.group.visible = threads.uniforms.uOpacity.value > 0.01
     grid.group.visible = grid.uniforms.uOpacity.value > 0.01
-    ocean.mesh.visible = ocean.uniforms.uOpacity.value > 0.01
+    ocean.group.visible = ocean.uniforms.uOpacity.value > 0.01
     cube.group.visible =
       cube.uniforms.uOpacity.value > 0.01 || cube.fallUniforms.uOpacity.value > 0.01
     terrain.group.visible = terrain.uniforms.uOpacity.value > 0.01

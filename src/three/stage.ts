@@ -36,6 +36,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : 1.5))
   renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.outputColorSpace = THREE.SRGBColorSpace
+  // 着色器直接输出显示值（不走色调映射），色彩控制权完全在各 shader 手里
 
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x030610)
@@ -51,9 +52,9 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     composer.addPass(new RenderPass(scene, camera))
     const bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.55, // strength
-      0.5, // radius
-      0.33, // threshold
+      0.6, // strength：柔和光晕
+      0.6, // radius：收小半径，避免全屏灰雾
+      0.32, // threshold
     )
     composer.addPass(bloom)
   }
@@ -69,6 +70,16 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   const clock = new THREE.Clock()
   const lookAt = new THREE.Vector3()
 
+  // 鼠标视差（触屏设备不启用）
+  const mouse = { x: 0, y: 0 }
+  const par = { x: 0, y: 0 }
+  if (!window.matchMedia('(pointer: coarse)').matches) {
+    window.addEventListener('pointermove', (e) => {
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1
+      mouse.y = (e.clientY / window.innerHeight) * 2 - 1
+    })
+  }
+
   function frame(): void {
     const dt = Math.min(clock.getDelta(), 0.05)
     const t = clock.elapsedTime
@@ -78,9 +89,14 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     const aspect = window.innerWidth / window.innerHeight
     const distScale = aspect >= 1 ? 1 : Math.min(1.9, Math.pow(1 / aspect, 0.8))
     lookAt.set(cam.tx, cam.ty, cam.tz)
+    // 视差缓动 + 极缓慢的呼吸漂移，让镜头「活」起来
+    par.x += (mouse.x * 0.55 - par.x) * Math.min(dt * 2.5, 1)
+    par.y += (-mouse.y * 0.3 - par.y) * Math.min(dt * 2.5, 1)
+    const swayX = Math.sin(t * 0.11) * 0.14
+    const swayY = Math.sin(t * 0.16 + 1.7) * 0.07
     camera.position.set(
-      cam.tx + (cam.px - cam.tx) * distScale,
-      cam.ty + (cam.py - cam.ty) * distScale,
+      cam.tx + (cam.px - cam.tx) * distScale + par.x + swayX,
+      cam.ty + (cam.py - cam.ty) * distScale + par.y + swayY,
       cam.tz + (cam.pz - cam.tz) * distScale,
     )
     camera.lookAt(lookAt)

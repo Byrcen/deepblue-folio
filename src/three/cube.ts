@@ -19,7 +19,8 @@ export interface Cube {
 }
 
 const COUNT = 27
-const SPACING = 0.82
+const SPACING = 0.8
+const VOXEL = 0.785 // 缝隙极窄，组装态读作一整块冰体
 
 export function createCube(quality: 'high' | 'low'): Cube {
   const group = new THREE.Group()
@@ -31,24 +32,39 @@ export function createCube(quality: 'high' | 'low'): Cube {
     uEnergy: { value: 1 },
   }
 
-  const geo = new THREE.BoxGeometry(0.76, 0.76, 0.76)
+  const geo = new THREE.BoxGeometry(VOXEL, VOXEL, VOXEL)
   const seeds = new Float32Array(COUNT)
-  for (let i = 0; i < COUNT; i++) seeds[i] = Math.random()
+  const offs = new Float32Array(COUNT * 3) // 体素在整块立方体中的原位（-1..1），供着色器做整体光照
+  {
+    let i = 0
+    for (let x = -1; x <= 1; x++)
+      for (let y = -1; y <= 1; y++)
+        for (let z = -1; z <= 1; z++) {
+          seeds[i] = Math.random()
+          offs[i * 3] = x
+          offs[i * 3 + 1] = y
+          offs[i * 3 + 2] = z
+          i++
+        }
+  }
   geo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seeds, 1))
+  geo.setAttribute('aHome', new THREE.InstancedBufferAttribute(offs, 3))
 
   const mat = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
     vertexShader: /* glsl */ `
       attribute float aSeed;
+      attribute vec3 aHome;
       varying vec3 vNormal;
       varying vec3 vWorld;
-      varying vec2 vUv;
+      varying vec3 vLocal;
       varying float vSeed;
 
       void main() {
-        vUv = uv;
         vSeed = aSeed;
+        // 组装态下顶点在整块立方体中的归一化坐标（约 -1..1）
+        vLocal = (aHome * ${SPACING.toFixed(2)} + position) / 1.25;
         vec4 ip = instanceMatrix * vec4(position, 1.0);
         vec4 w = modelMatrix * ip;
         vWorld = w.xyz;
@@ -62,7 +78,7 @@ export function createCube(quality: 'high' | 'low'): Cube {
       uniform float uEnergy;
       varying vec3 vNormal;
       varying vec3 vWorld;
-      varying vec2 vUv;
+      varying vec3 vLocal;
       varying float vSeed;
 
       float hash(vec2 p) {
@@ -80,25 +96,37 @@ export function createCube(quality: 'high' | 'low'): Cube {
       }
 
       void main() {
-        vec3 deep = vec3(0.03, 0.09, 0.22);
-        vec3 blue = vec3(0.18, 0.49, 0.96);
-        vec3 cyan = vec3(0.30, 0.88, 1.0);
+        vec3 deep = vec3(0.02, 0.09, 0.28);
+        vec3 blue = vec3(0.09, 0.42, 1.0);
+        vec3 cyan = vec3(0.35, 0.85, 1.0);
+        vec3 white = vec3(0.85, 0.96, 1.0);
 
-        // 面上流动的能量噪声（电路感）
-        float n = noise(vUv * 2.0 + vSeed * 17.0 + uTime * 0.22);
-        n += noise(vUv * 5.0 - uTime * 0.13) * 0.45;
-        float energy = smoothstep(0.5, 1.3, n) * uEnergy;
-
-        // 呼吸脉冲
-        float pulse = 0.75 + 0.25 * sin(uTime * 1.4 + vSeed * 6.28);
-
+        vec3 n = normalize(vNormal);
         vec3 v = normalize(cameraPosition - vWorld);
-        float fres = pow(1.0 - max(dot(normalize(vNormal), v), 0.0), 2.2);
+
+        // 内部光核：由整块立方体中心向外柔和辐射
+        float core = 1.0 - clamp(length(vLocal) * 0.55, 0.0, 1.0);
+        core = pow(core, 1.4);
+
+        // 极缓慢流动的内部能量（低频、细腻）
+        float e = noise(vLocal.xy * 1.7 + uTime * 0.05) * 0.6
+                + noise(vLocal.zy * 2.2 - uTime * 0.04) * 0.4;
+        float energy = (0.65 + 0.45 * e) * uEnergy;
+
+        // 内部光把顶面与受光侧「照透」，底部留深
+        float top = clamp(n.y, 0.0, 1.0);
+        float side = clamp(n.x * 0.6 + n.z * 0.4, 0.0, 1.0);
+        float vert = smoothstep(-1.4, 1.1, vLocal.y); // 面上自下而上渐亮
+
+        float fres = pow(1.0 - max(dot(n, v), 0.0), 2.6);
 
         vec3 col = deep;
-        col += mix(blue, cyan, n) * energy * 0.5 * pulse;
-        col += cyan * fres * 0.45 * uEnergy;
-        col += blue * 0.14;
+        col += mix(blue, cyan, core * 0.5 + vert * 0.5) * (core * 0.9 + vert * 0.5) * energy;
+        col += white * pow(core, 4.0) * 0.35 * energy;
+        col += cyan * top * 0.35 * energy;
+        col += cyan * side * 0.2 * energy;
+        col += blue * 0.1;
+        col += cyan * fres * 0.4;
 
         gl_FragColor = vec4(col, uOpacity);
       }
@@ -114,11 +142,11 @@ export function createCube(quality: 'high' | 'low'): Cube {
   const edgeMat = new THREE.LineBasicMaterial({
     color: 0x4de1ff,
     transparent: true,
-    opacity: 0.4,
+    opacity: 0.14,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   })
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(2.5, 2.5, 2.5)), edgeMat)
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(2.42, 2.42, 2.42)), edgeMat)
   group.add(edges)
 
   // ---- 光瀑粒子（第二幕，世界坐标独立于自转） ----
@@ -189,9 +217,9 @@ export function createCube(quality: 'high' | 'low'): Cube {
 
   function update(t: number): void {
     const ex = state.explode
-    group.position.y = 2.25 + Math.sin(t * 0.8) * 0.12
-    group.rotation.y = t * 0.12 + ex * 1.4
-    edgeMat.opacity = 0.4 * (1 - ex) * uniforms.uOpacity.value
+    group.position.y = 2.25 + Math.sin(t * 0.5) * 0.1
+    group.rotation.y = t * 0.06 + ex * 1.4
+    edgeMat.opacity = 0.14 * (1 - ex) * uniforms.uOpacity.value
 
     for (let i = 0; i < COUNT; i++) {
       const o = offsets[i]
